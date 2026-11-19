@@ -1,0 +1,84 @@
+
+name: Build Astral Echo APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Extract game project
+        run: |
+          mkdir -p project
+
+          ARCHIVE=""
+
+          for file in \
+            AstralEcho_3D_Prototype.zip \
+            AstralEcho_Landscape_Update.zip \
+            AstralEchoAndroid_Enhanced.zip \
+            AstralEchoAndroid_CloudBuild.zip
+          do
+            if [ -f "$file" ]; then
+              ARCHIVE="$file"
+              break
+            fi
+          done
+
+          if [ -n "$ARCHIVE" ]; then
+            echo "Extracting $ARCHIVE"
+            unzip -q -o "$ARCHIVE" -d project
+          else
+            echo "ZIP archive not found. Checking repository files..."
+            cp -r ./* project/ 2>/dev/null || true
+          fi
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Find Android project
+        id: find_project
+        run: |
+          SETTINGS=$(find project -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -print -quit)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: Android Gradle project not found!"
+            find project -maxdepth 4 -type f
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Build APK
+        run: |
+          cd "${{ steps.find_project.outputs.dir }}"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug
+          else
+            gradle assembleDebug
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Astral-Echo-APK
+          path: project/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          
